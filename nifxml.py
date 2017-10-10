@@ -215,7 +215,7 @@ class CFile(file):
         # special, private:, public:, and protected:
         if txt[-1:] == ":": self.indent += 1
     
-        self.write(result)
+        self.write(result.encode('utf8'))
     
     
     # 
@@ -321,7 +321,7 @@ class CFile(file):
                 # declare array_output_count, only if it will actually be used
                 for y in block.members:
                     if y.arr1.lhs or (y.ctype in ["BoundingVolume", "ByteArray", "KeyGroup",
-                    "ConstraintData", "MalleableDescriptor","PrismaticDescriptor"]):
+                    "ConstraintData", "MalleableDescriptor","PrismaticDescriptor","NiQuatTransform","GeomMaterialData"]):
                         self.code("unsigned int array_output_count = 0;")
                         break
             if action == ACTION_GETREFS:
@@ -1323,7 +1323,7 @@ class Member:
                 if self.arr1.lhs.isdigit():
                     sep = (',(%s)'%class_name(self.type))
                     self.default = self.arr1.lhs + sep + sep.join(self.default.split(' ', int(self.arr1.lhs)))
-            elif self.type == "string" or self.type == "IndexString":
+            elif self.type == "string" or self.type == "IndexString" or self.type == "SizedString":
                 self.default = "\"" + self.default + "\""
             elif self.type == "float":
                 self.default += "f"

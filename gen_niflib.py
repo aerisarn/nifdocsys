@@ -89,7 +89,9 @@ for i in sys.argv:
         
     prev = i
 
-    
+
+sourceList = open(os.path.join(ROOT_DIR, "sources.cmake"), 'w')
+sourceList.write( 'set(compounds\n')
 # Fix known manual update attributes. For now hard code here.
 block_types["NiKeyframeData"].find_member("Num Rotation Keys").is_manual_update = True
 #block_types["NiTriStripsData"].find_member("Num Triangles").is_manual_update = True
@@ -313,6 +315,8 @@ for n in compound_names:
         #Get existing custom code
         file_name = ROOT_DIR + '/src/gen/' + x.cname + '.cpp'
         custom_lines = ExtractCustomCode( file_name );
+		
+        sourceList.write( 'src/gen/' + x.cname + '.cpp\n')
 
         cpp = CFile(file_name, 'w')
         cpp.code( '/* Copyright (c) 2006, NIF File Format Library and Tools' )
@@ -368,9 +372,9 @@ for n in compound_names:
             cpp.code( 'info.userVersion = userVersion;' )
             cpp.code( 'info.userVersion2 = userVersion2;' )
             cpp.code( 'info.endian = EndianType(endianType);' )
-            cpp.code( 'info.creator = exportInfo.creator.str;' )
-            cpp.code( 'info.exportInfo1 = exportInfo.exportInfo1.str;' )
-            cpp.code( 'info.exportInfo2 = exportInfo.exportInfo2.str;' )
+            cpp.code( 'info.author = exportInfo.author.str;' )
+            cpp.code( 'info.processScript = exportInfo.processScript.str;' )
+            cpp.code( 'info.exportScript = exportInfo.exportScript.str;' )
             cpp.code()
             cpp.code( 'return info;' )
             cpp.code()
@@ -476,8 +480,13 @@ if GENALLFILES:
     out.code('#endif')
     out.close()
 
+sourceList.write(' )\n')
+sourceList.write(' set (misc\n')
+
     #Write out Enumeration Implementation
 if GENALLFILES:
+
+    sourceList.write( 'src/gen/enums.cpp\n')
     out = CFile(ROOT_DIR + '/src/gen/enums.cpp', 'w')
     out.code( '/* Copyright (c) 2006, NIF File Format Library and Tools' )
     out.code( 'All rights reserved.  Please see niflib.h for license. */' )
@@ -528,6 +537,7 @@ if GENALLFILES:
     #
     # NiObject Registration Function
     #
+    sourceList.write( 'src/gen/register.cpp\n')
     out = CFile(ROOT_DIR + '/src/gen/register.cpp', 'w')
     out.code( '/* Copyright (c) 2006, NIF File Format Library and Tools' )
     out.code( 'All rights reserved.  Please see niflib.h for license. */' )
@@ -553,6 +563,8 @@ if GENALLFILES:
     out.close()
     
 
+sourceList.write(')\n')
+sourceList.write('set(niobjects\n')
 #
 # NiObject Files
 #
@@ -707,6 +719,7 @@ for n in block_names:
     #
 
     #Get existing custom code
+    sourceList.write( 'src/obj/' + x.cname + '.cpp\n')
     file_name = ROOT_DIR + '/src/obj/' + x.cname + '.cpp'
     custom_lines = ExtractCustomCode( file_name );
         
@@ -905,3 +918,6 @@ for n in block_names:
     #OverwriteIfChanged( file_name, 'temp' )
 
     out.close()
+
+sourceList.write( ')\n')
+sourceList.close()
