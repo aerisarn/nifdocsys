@@ -234,7 +234,8 @@ for n in compound_names:
     x = compound_types[n]
     
     # skip natively implemented types
-    if x.niflibtype: continue
+#    if x.niflibtype: continue
+    if x.name in NATIVETYPES.keys(): continue
     if n[:3] == 'ns ': continue
     
     if not GENALLFILES and not x.cname in GENBLOCKS:
@@ -562,6 +563,40 @@ if GENALLFILES:
     out.code( '}' )
     out.close()
     
+    #
+    # NiObject Abstract visitor
+    #
+    out = CFile(ROOT_DIR + '/include/visitor.h', 'w')
+    out.code( '/* Copyright (c) 2017, NIF File Format Library and Tools' )
+    out.code( 'All rights reserved.  Please see niflib.h for license. */' )
+    out.code()
+    out.code( '//---THIS FILE WAS AUTOMATICALLY GENERATED.  DO NOT EDIT---//' )
+    out.code()
+    out.code( '//To change this file, alter the niftools/docsys/gen_niflib.py Python script.' )
+    out.code()
+    #for n in block_names:
+     #   x = block_types[n]
+ #       out.code( '#include <obj/' + x.cname + '.h>' )
+     #   out.code( 'class ' + x.cname + ';')
+    out.code( 'namespace Niflib {' )
+    for n in block_names:
+        x = block_types[n]
+ #       out.code( '#include <obj/' + x.cname + '.h>' )
+        out.code( 'class ' + x.cname + ';')
+    out.code()
+    out.code( 'class Visitor {' )
+    out.code( 'public:' )
+    out.code( 'virtual inline void start(NiObject&) {/*NTD*/}' )
+    out.code( 'virtual inline void end(NiObject&) {/*NTD*/}' )
+    out.code()
+    for n in block_names:
+        x = block_types[n]
+        out.code( 'virtual inline void visit( ' + x.cname + '& ) {/*NTD*/}' )
+    out.code()
+    out.code( '};' )
+    out.code( '}' )
+    out.close()
+    
 
 sourceList.write(')\n')
 sourceList.write('set(niobjects\n')
@@ -618,6 +653,7 @@ for n in block_names:
         out.code( 'class ' + x.cname + ' : public ' + x.inherit.cname + ' {' )
     else:
         out.code( 'class ' + x.cname + ' : public RefObject {' )
+    out.code( 'friend class Visitor;')
     out.code( 'public:' )
     out.code( '/*! Constructor */' )
     out.code( 'NIFLIB_API ' + x.cname + '();' )
@@ -647,7 +683,14 @@ for n in block_names:
     out.code( ' * Used to determine the type of a particular instance of this object.' )
     out.code( ' * \\return The type constant for the actual type of the object.' )
     out.code( ' */' )
-    out.code( 'NIFLIB_API virtual const Type & GetType() const;' )
+    out.code( 'NIFLIB_API virtual const Type & GetInternalType() const;' )
+    out.code()
+    out.code( '/*!' )
+    out.code( ' * Used to solve the double dispatch on the NIF tree' )
+    out.code( ' * \\param[in] The visitor class' )
+    out.code( ' * \\param[out] the visit return' )
+    out.code( ' */' )
+    out.code( 'NIFLIB_API virtual void accept(class Visitor& visitor, const NifInfo &);' )
     out.code()
 
     #
@@ -658,11 +701,11 @@ for n in block_names:
     if GENACCESSORS:
         func_members = []
         for y in x.members:
-            if not y.arr1_ref and not y.arr2_ref and y.cname.lower().find("unk") == -1:
+            if not y.arr1_ref and not y.is_duplicate and not y.arr2_ref and y.cname.lower().find("unk") == -1:
                 func_members.append(y)
     
         if len(func_members) > 0:
-            out.code( '/***Begin Example Naive Implementation****' )
+            out.code( '/***Begin Example Naive Implementation****/' )
             out.code()
             for y in func_members:
                 out.comment( y.description + "\n\\return The current value.", False )
@@ -671,7 +714,7 @@ for n in block_names:
                 out.comment( y.description + "\n\\param[in] value The new value.", False )
                 out.code(  y.setter_declare("", ";") )
                 out.code()
-            out.code( '****End Example Naive Implementation***/' )
+            out.code( '/****End Example Naive Implementation***/' )
         else:
             out.code ( '//--This object has no eligable attributes.  No example implementation generated--//' )
         out.code()
@@ -744,6 +787,7 @@ for n in block_names:
     out.code( '#include "../../include/FixLink.h"' )
     out.code( '#include "../../include/ObjectRegistry.h"' )
     out.code( '#include "../../include/NIF_IO.h"' )
+    out.code( '#include <visitor.h>' )
     out.code( x.code_include_cpp( True, "../../include/gen/", "../../include/obj/" ) )
     out.code( "using namespace Niflib;" );
     out.code()
@@ -778,7 +822,7 @@ for n in block_names:
     out.code ( '//--END CUSTOM CODE--//')
     out.code ( '}' )
     out.code() 
-    out.code( 'const Type & %s::GetType() const {'%x.cname )
+    out.code( 'const Type & %s::GetInternalType() const {'%x.cname )
     out.code( 'return TYPE;' )
     out.code( '}' )
     out.code()
@@ -881,27 +925,32 @@ for n in block_names:
     out.code("}")
     out.code()
 
+    out.code("void %s::accept(Visitor& visitor, const NifInfo & info) {"%x.cname)
+    out.stream(x, ACTION_ACCEPT)
+    out.code("}")
+    out.code()
+
     # Output example implementation of public getter/setter Mmthods if requested
     if GENACCESSORS:
         func_members = []
         for y in x.members:
-            if not y.arr1_ref and not y.arr2_ref and y.cname.lower().find("unk") == -1:
+            if not y.arr1_ref and not y.is_duplicate and not y.arr2_ref and y.cname.lower().find("unk") == -1:
                 func_members.append(y)
     
         if len(func_members) > 0:
-            out.code( '/***Begin Example Naive Implementation****' )
+            out.code( '/***Begin Example Naive Implementation****/' )
             out.code()
             for y in func_members:
-                out.code( y.getter_declare(x.name + "::", " {") )
+                out.code( y.getter_declare(x.cname + "::", " {") )
                 out.code( "return %s;"%y.cname )
                 out.code( "}" )
                 out.code()
                 
-                out.code( y.setter_declare(x.name + "::", " {") )
-                out.code( "%s = value;"%y.cname )
+                out.code( y.setter_declare(x.cname + "::", " {") )
+                out.code( "this->%s = value;"%y.cname )
                 out.code( "}" )
                 out.code()
-            out.code( '****End Example Naive Implementation***/' )
+            out.code( '/****End Example Naive Implementation***/' )
         else:
             out.code ( '//--This object has no eligable attributes.  No example implementation generated--//' )
         out.code()

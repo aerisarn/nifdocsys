@@ -320,7 +320,7 @@ for n, x in itertools.chain(enum_types.iteritems(), flag_types.iteritems()):
     temp.set_var( "contents", temp.parse( "templates/enum.html") )
 
     f = file(ROOT_DIR + '/doc/' + x.cname.replace("\\", "_") + '.html', 'w')
-    f.write( temp.parse( "templates/main.html" ) )
+    f.write( temp.parse( "templates/main.html" ).encode('utf-8') )
     f.close()
 
 

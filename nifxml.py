@@ -114,12 +114,65 @@ flag_names = []
 block_names = []
 version_names = []
 
+NATIVETYPES = {
+    'bool' : 'bool',
+    'byte' : 'byte',
+    'uint' : 'unsigned int',
+    'ulittle32' : 'unsigned int',
+    'ushort' : 'unsigned short',
+    'int' : 'int',
+    'short' : 'short',
+    'BlockTypeIndex' : 'unsigned short',
+    'char' : 'byte',
+    'FileVersion' : 'unsigned int',
+    'Flags' : 'unsigned short',
+    'float' : 'float',
+    'hfloat' : 'hfloat',
+    'HeaderString' : 'HeaderString',
+    'LineString' : 'LineString',
+    'Ptr' : '*',
+    'Ref' : 'Ref',
+    'StringOffset' : 'unsigned int',
+    'StringIndex' : 'IndexString',
+    'SizedString' : 'string',
+    'string' : 'IndexString',
+    'Color3' : 'Color3',
+#    'ByteColor3"><!-- niflibtype="Color3" -->
+    'Color4' : 'Color4',
+    'ByteColor4' : 'ByteColor4',
+    'FilePath' : 'IndexString',
+    'Vector3' : 'Vector3',
+    'Vector4' : 'Vector4',
+    'Quaternion' : 'Quaternion',
+    'Matrix22' : 'Matrix22',
+    'Matrix33' : 'Matrix33',
+    'Matrix34' : 'Matrix34',
+    'Matrix44' : 'Matrix44',
+    'hkMatrix3' : 'InertiaMatrix',
+    'ShortString' : 'ShortString',
+    'Key' : 'Key',
+    'QuatKey' : 'Key', #template this
+    'TexCoord' : 'TexCoord',
+    'Triangle' : 'Triangle',
+	'BSVertexData' : 'BSVertexData',
+	'BSVertexDataSSE' : 'BSVertexData',
+    'BSVertexDesc' : 'BSVertexDesc'
+}
+
+CUSTOMNATIVETYPES = {
+#this governs includes, rationalize the other types up here
+	'BSVertexData' : 'BSVertexData',
+	'BSVertexDataSSE' : 'BSVertexData',
+    'BSVertexDesc' : 'BSVertexDesc'
+}
+
 ACTION_READ = 0
 ACTION_WRITE = 1
 ACTION_OUT = 2
 ACTION_FIXLINKS = 3
 ACTION_GETREFS = 4
 ACTION_GETPTRS = 5
+ACTION_ACCEPT = 6
 
 #
 # HTML Template class
@@ -141,12 +194,14 @@ class Template:
     def parse(self, file_name):
         #Open file and read contents to txt variable
         f = file(file_name, 'r')
-        txt = f.read()
+        txt = f.read().encode('ascii')
         f.close()
 
         #Loop through all variables, replacing them in the template text
         for i in self.vars:
-            txt = txt.replace( "{" + i + "}", str(self.vars[i]) )
+            a = i.encode('utf-8')
+            s = unicode(self.vars[i])
+            txt = txt.replace( "{".encode('utf-8') + i.encode('utf-8') + "}".encode('utf-8'), unicode(self.vars[i]) )
 
         #return result
         return txt
@@ -288,6 +343,7 @@ class CFile(file):
             ACTION_FIXLINKS - FixLinks function
             ACTION_GETREFS - GetRefs function
             ACTION_GETPTRS - GetPtrs function
+            ACTION_ACCEPT - accept function
         @type action: ACTION_X constant
         @param localprefix: ?
         @type localprefix: string
@@ -328,7 +384,7 @@ class CFile(file):
                 self.code("list<Ref<NiObject> > refs;")
             if action == ACTION_GETPTRS:
                 self.code("list<NiObject *> ptrs;")
-
+                
         # stream the ancestor
         if isinstance(block, Block):
             if block.inherit:
@@ -344,6 +400,8 @@ class CFile(file):
                     self.code("refs = %s::GetRefs();"%block.inherit.cname)
                 elif action == ACTION_GETPTRS:
                     self.code("ptrs = %s::GetPtrs();"%block.inherit.cname)
+                elif action == ACTION_ACCEPT:
+                    self.code("%s::accept(visitor, info);"%block.inherit.cname)
 
         # declare and calculate local variables (TODO: GET RID OF THIS; PREFERABLY NO LOCAL VARIABLES AT ALL)
         if action in [ACTION_READ, ACTION_WRITE, ACTION_OUT]:
@@ -391,7 +449,7 @@ class CFile(file):
                 subblock = flag_types[y.type]
                 
             # check for links
-            if action in [ACTION_FIXLINKS, ACTION_GETREFS, ACTION_GETPTRS]:
+            if action in [ACTION_FIXLINKS, ACTION_GETREFS, ACTION_GETPTRS, ACTION_ACCEPT]:
                 if not subblock.has_links and not subblock.has_crossrefs:
                     continue # contains no links, so skip this member!
             if action == ACTION_OUT:
@@ -447,7 +505,7 @@ class CFile(file):
             # conditioning
             y_cond = y.cond.code(y_cond_prefix)
             y_vercond = y.vercond.code('info.')
-            if action in [ACTION_READ, ACTION_WRITE, ACTION_FIXLINKS]:
+            if action in [ACTION_READ, ACTION_WRITE, ACTION_FIXLINKS, ACTION_ACCEPT]:
                 if lastver1 != y.ver1 or lastver2 != y.ver2 or lastuserver != y.userver or lastuserver2 != y.userver2 or lastvercond != y_vercond:
                     # we must switch to a new version block    
                     # close old version block
@@ -552,7 +610,7 @@ class CFile(file):
     
             if native_types.has_key(y.type):
                 # these actions distinguish between refs and non-refs
-                if action in [ACTION_READ, ACTION_WRITE, ACTION_FIXLINKS, ACTION_GETREFS, ACTION_GETPTRS]:
+                if action in [ACTION_READ, ACTION_WRITE, ACTION_FIXLINKS, ACTION_GETREFS, ACTION_GETPTRS, ACTION_ACCEPT]:
                     if (not subblock.is_link) and (not subblock.is_crossref):
                         # not a ref
                         if action in [ACTION_READ, ACTION_WRITE] and y.is_abstract is False:
@@ -600,7 +658,8 @@ class CFile(file):
                             self.code("}")
                         elif action == ACTION_FIXLINKS:
                             self.code("%s = FixLink<%s>( objects, link_stack, missing_link_stack, info );"%(z,y.ctemplate))
-                                
+                        elif action == ACTION_ACCEPT:
+                            self.code("if ( %s != NULL ) accepts<%s>(%s, visitor, info);"%(z,y.ctemplate,z))                             
                         elif action == ACTION_GETREFS and subblock.is_link:
                             if not y.is_duplicate:
                                 self.code('if ( %s != NULL )\n\trefs.push_back(StaticCast<NiObject>(%s));'%(z,z))
@@ -639,10 +698,10 @@ class CFile(file):
             lastcond = y_cond
             lastvercond = y_vercond
 
-        if action in [ACTION_READ, ACTION_WRITE, ACTION_FIXLINKS]:
+        if action in [ACTION_READ, ACTION_WRITE, ACTION_FIXLINKS, ACTION_ACCEPT]:
             if lastver1 or lastver2 or not(lastuserver is None) or not(lastuserver2 is None) or lastvercond:
                 self.code("};")
-        if action in [ACTION_READ, ACTION_WRITE, ACTION_FIXLINKS, ACTION_OUT]:
+        if action in [ACTION_READ, ACTION_WRITE, ACTION_FIXLINKS, ACTION_OUT, ACTION_ACCEPT]:
             if lastcond:
                 self.code("};")
 
@@ -654,7 +713,6 @@ class CFile(file):
                 self.code("return refs;")
             if action == ACTION_GETPTRS:
                 self.code("return ptrs;")
-
     # declaration
     # print "$t Get$n() const; \nvoid Set$n($t value);\n\n";
     def getset_declare(self, block, prefix = ""): # prefix is used to tag local variables only
@@ -1287,7 +1345,7 @@ class Member:
         self.is_abstract = (element.getAttribute('abstract') == "1")
         self.next_dup  = None
         self.is_manual_update = False
-        self.is_calculated = (element.getAttribute('calculated') == "1")
+        self.is_calculated = False # (element.getAttribute('calculated') == "1")
 
         #Get description from text between start and end tags
         if element.firstChild:
@@ -1325,8 +1383,8 @@ class Member:
                     self.default = self.arr1.lhs + sep + sep.join(self.default.split(' ', int(self.arr1.lhs)))
             elif self.type == "string" or self.type == "IndexString" or self.type == "SizedString":
                 self.default = "\"" + self.default + "\""
-            elif self.type == "float":
-                self.default += "f"
+#            elif self.type == "float":
+#                self.default += "f"
             elif self.type in ["Ref", "Ptr", "bool", "Vector3"]:
                 pass
             elif self.default.find(',') != -1:
@@ -1435,17 +1493,17 @@ class Member:
               ltype = "%s *"%self.ctemplate
       if self.arr1.lhs:
           if self.arr1.lhs.isdigit():
-              ltype = "array<%s,%s > "%(self.arr1.lhs, ltype)
+              ltype = "Niflib::array<%s,%s > "%(self.arr1.lhs, ltype)
               # ltype = ltype
           else:
               if self.arr2.lhs and self.arr2.lhs.isdigit():
-                  ltype = "vector< array<%s,%s > >"%(self.arr2.lhs, ltype)
+                  ltype = "vector< Niflib::array<%s,%s > >"%(self.arr2.lhs, ltype)
               else:
                   ltype = "vector<%s >"%ltype
           if self.arr2.lhs:
               if self.arr2.lhs.isdigit():
                   if self.arr1.lhs.isdigit():
-                    ltype = "array<%s,%s >"%(self.arr2.lhs,ltype)
+                    ltype = "Niflib::array<%s,%s >"%(self.arr2.lhs,ltype)
                     # ltype = ltype
               else:
                   ltype = "vector<%s >"%ltype
@@ -1461,17 +1519,20 @@ class Member:
               ltype = "%s *"%self.ctemplate
       if self.arr1.lhs:
           if self.arr1.lhs.isdigit():
-            # ltype = "const %s&"%ltype
-            if self.arr2.lhs and self.arr2.lhs.isdigit():
-                  ltype = "const array< %s, array<%s,%s > >&"%(self.arr1.lhs,self.arr2.lhs, ltype)
-            else:
-                  ltype = "const array<%s,%s >& "%(self.arr1.lhs,ltype)              
-            
+              ltype = "const Niflib::array<%s,%s > &"%(self.arr1.lhs, ltype)
+              # ltype = ltype
           else:
               if self.arr2.lhs and self.arr2.lhs.isdigit():
-                  ltype = "const vector< array<%s,%s > >&"%(self.arr2.lhs, ltype)
+                  ltype = "const vector< Niflib::array<%s,%s > > &"%(self.arr2.lhs, ltype)
               else:
-                  ltype = "const vector<%s >&"%ltype
+                  ltype = "vector<%s > "%ltype
+          if self.arr2.lhs:
+              if self.arr2.lhs.isdigit():
+                  if self.arr1.lhs.isdigit():
+                    ltype = "const Niflib::array<%s,%s > &"%(self.arr2.lhs,ltype)
+                    # ltype = ltype
+              else:
+                  ltype = "const vector<%s > &"%ltype
       else:
           if not self.type in basic_names:
             ltype = "const %s &"%ltype
@@ -1491,7 +1552,7 @@ class Basic:
         self.name = element.getAttribute('name')
         assert(self.name) # debug
         self.cname = class_name(self.name)
-        self.niflibtype = element.getAttribute('niflibtype')
+        self.niflibtype = NATIVETYPES.get(self.name) # element.getAttribute('niflibtype')
         if element.firstChild and element.firstChild.nodeType == Node.TEXT_NODE:
             self.description = element.firstChild.nodeValue.strip()
         else:
@@ -1641,6 +1702,8 @@ class Compound(Basic):
                 if y.type in compound_names:
                     if not compound_types[y.type].niflibtype:
                         file_name = "%s%s.h"%(self.gen_file_prefix, y.ctype)
+                    elif compound_types[y.type].name in CUSTOMNATIVETYPES.keys():
+                        file_name = "../custom_types/%s.h"%(y.ctype)
                 elif y.type in basic_names:
                     if basic_types[y.type].niflibtype == "Ref":
                         file_name = "%sRef.h"%(self.root_file_prefix)
@@ -1670,7 +1733,42 @@ class Compound(Basic):
         
         return result
 
+    def code_include_cpp_set(self, usedirs=False, gen_dir=None, obj_dir=None):
+        if self.niflibtype: return ""
+        
+        if not usedirs:
+          gen_dir = self.gen_file_prefix
+          obj_dir = self.obj_file_prefix
+
+        result = []
+
+        if self.name in compound_names:
+            result.append('#include "%s%s.h"\n'%(gen_dir, self.cname))
+        elif self.name in block_names:
+            result.append('#include "%s%s.h"\n'%(obj_dir, self.cname))
+        else: assert(False) # bug
+
+        # include referenced blocks
+        used_blocks = []
+        for y in self.members:
+            if y.template in block_names and y.template != self.name:
+                file_name = '#include "%s%s.h"\n'%(obj_dir, y.ctemplate)
+                if file_name not in used_blocks:
+                    used_blocks.append( file_name )
+            if y.type in compound_names:
+                subblock = compound_types[y.type]
+                used_blocks.extend(subblock.code_include_cpp_set(True, gen_dir, obj_dir))
+            for terminal in y.cond.get_terminals():
+                if terminal in block_types:
+                    used_blocks.append('#include "%s%s.h"\n'%(obj_dir, terminal))
+        for file_name in sorted(set(used_blocks)):
+            result.append(file_name)
+
+        return result    
+        
     def code_include_cpp(self, usedirs=False, gen_dir=None, obj_dir=None):
+        return ''.join(self.code_include_cpp_set(True, gen_dir, obj_dir))
+    
         if self.niflibtype: return ""
         
         if not usedirs:
